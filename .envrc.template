@@ -1,3 +1,0 @@
-# Discord Settings
-# Get your webhook URL from Discord Channel Settings > Integrations
-export DISCORD_WEBHOOK_URL="your_webhook_url_here"

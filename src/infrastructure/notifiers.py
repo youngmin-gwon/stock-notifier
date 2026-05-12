@@ -5,7 +5,8 @@ from src.domain.interfaces import INotifier
 
 class DiscordNotifier(INotifier):
     def __init__(self, webhook_url: str):
-        self.webhook_url = webhook_url
+        # strip() ensures that any accidental leading/trailing whitespace or newlines from environment variables are removed.
+        self.webhook_url = webhook_url.strip() if webhook_url else None
 
     def send_recommendations(self, recommendations: List[Recommendation]):
         if not recommendations:
@@ -42,9 +43,8 @@ class DiscordNotifier(INotifier):
         stats = rec.sector_stats
         market_icon = "🇰🇷" if s.market == MarketType.KRX else "🇺🇸"
         
-        # Comparison logic for UX
         def compare(val, avg, better_if_lower=True):
-            if not val or not avg: return ""
+            if val is None or avg is None or avg == 0: return ""
             diff = ((val - avg) / avg) * 100
             if better_if_lower:
                 icon = "✅" if val < avg else "⚠️"
@@ -70,7 +70,9 @@ class DiscordNotifier(INotifier):
         try:
             if len(content) > 2000:
                 content = content[:1990] + "..."
+            
             payload = {"content": content}
+            # The URL has been stripped in __init__, so it should be clean here.
             response = requests.post(self.webhook_url, json=payload)
             response.raise_for_status()
         except Exception as e:
