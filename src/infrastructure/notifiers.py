@@ -5,7 +5,6 @@ from src.domain.interfaces import INotifier
 
 class DiscordNotifier(INotifier):
     def __init__(self, webhook_url: str):
-        # strip() ensures that any accidental leading/trailing whitespace or newlines from environment variables are removed.
         self.webhook_url = webhook_url.strip() if webhook_url else None
 
     def send_recommendations(self, recommendations: List[Recommendation]):
@@ -68,12 +67,24 @@ class DiscordNotifier(INotifier):
 
     def _send_to_discord(self, content: str):
         try:
+            # Enhanced debugging logs
+            if self.webhook_url:
+                url_len = len(self.webhook_url)
+                masked = f"{self.webhook_url[:15]}...{self.webhook_url[-5:]}"
+                print(f"[DEBUG] Discord URL Check: Length={url_len}, Masked={masked}")
+            else:
+                print("[DEBUG] Discord URL is EMPTY")
+
             if len(content) > 2000:
                 content = content[:1990] + "..."
             
             payload = {"content": content}
-            # The URL has been stripped in __init__, so it should be clean here.
             response = requests.post(self.webhook_url, json=payload)
+            
+            if not response.ok:
+                print(f"[DEBUG] Discord Error Response: {response.status_code}")
+                print(f"[DEBUG] Error Body: {response.text}")
+
             response.raise_for_status()
         except Exception as e:
             print(f"Error sending to Discord: {e}")
