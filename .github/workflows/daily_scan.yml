@@ -2,12 +2,16 @@ name: Daily Stock Scan
 
 on:
   schedule:
+    # Runs at 21:00 UTC every day, which is 06:00 KST the next day.
     - cron: '0 21 * * *'
-  workflow_dispatch:
+  workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:
   scan:
     runs-on: ubuntu-latest
+    env:
+      # Opt into Node.js 24 to resolve deprecation warnings for actions
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

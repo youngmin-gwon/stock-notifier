@@ -17,71 +17,88 @@ class DualAnalysisStrategy:
 
     def analyze_all(self, stocks: List[Stock]) -> List[Recommendation]:
         recommendations = []
+        
+        # Calculate market-wide stats as a fallback
+        market_stats = self._calculate_stats(stocks)
+        # Calculate sector-specific stats
         sector_stats = self._calculate_sector_stats(stocks)
         
         for stock in stocks:
-            value_rec = self._assess_value(stock, sector_stats)
+            # Use sector stats if available and has enough samples, otherwise fallback to market stats
+            stats = sector_stats.get(stock.sector, market_stats)
+            if stats.get("count", 0) < 3:
+                stats = market_stats
+
+            # 1. Value Track
+            value_rec = self._assess_value(stock, stats)
             if value_rec: recommendations.append(value_rec)
             
-            quality_rec = self._assess_quality(stock, sector_stats)
+            # 2. Quality Track
+            quality_rec = self._assess_quality(stock, stats)
             if quality_rec: recommendations.append(quality_rec)
                 
         return recommendations
 
+    def _calculate_stats(self, stocks: List[Stock]) -> Dict[str, float]:
+        pers = [s.metrics.per for s in stocks if s.metrics.per and s.metrics.per > 0]
+        pbrs = [s.metrics.pbr for s in stocks if s.metrics.pbr and s.metrics.pbr > 0]
+        roes = [s.metrics.roe for s in stocks if s.metrics.roe]
+        debts = [s.metrics.debt_ratio for s in stocks if s.metrics.debt_ratio]
+        
+        return {
+            "avg_per": statistics.mean(pers) if pers else self.max_per,
+            "avg_pbr": statistics.mean(pbrs) if pbrs else self.max_pbr,
+            "avg_roe": statistics.mean(roes) if roes else 0,
+            "avg_debt": statistics.mean(debts) if debts else 0,
+            "count": len(stocks)
+        }
+
     def _calculate_sector_stats(self, stocks: List[Stock]) -> Dict[str, Dict[str, float]]:
-        stats = {}
+        sector_map = {}
         sectors = set(s.sector for s in stocks if s.sector)
         
         for sector in sectors:
             sector_stocks = [s for s in stocks if s.sector == sector]
-            pers = [s.metrics.per for s in sector_stocks if s.metrics.per and s.metrics.per > 0]
-            pbrs = [s.metrics.pbr for s in sector_stocks if s.metrics.pbr and s.metrics.pbr > 0]
-            roes = [s.metrics.roe for s in sector_stocks if s.metrics.roe]
-            debts = [s.metrics.debt_ratio for s in sector_stocks if s.metrics.debt_ratio]
+            sector_map[sector] = self._calculate_stats(sector_stocks)
+            sector_map[sector]["count"] = len(sector_stocks)
             
-            stats[sector] = {
-                "avg_per": statistics.mean(pers) if pers else 0,
-                "avg_pbr": statistics.mean(pbrs) if pbrs else 0,
-                "avg_roe": statistics.mean(roes) if roes else 0,
-                "avg_debt": statistics.mean(debts) if debts else 0
-            }
-        return stats
+        return sector_map
 
-    def _assess_value(self, stock: Stock, sector_stats: Dict) -> Optional[Recommendation]:
+    def _assess_value(self, stock: Stock, stats: Dict) -> Optional[Recommendation]:
         m = stock.metrics
         if not m.per or not m.pbr: return None
         if m.per > self.max_per or m.pbr > self.max_pbr: return None
         
-        stats = sector_stats.get(stock.sector, {})
         avg_per = stats.get("avg_per", self.max_per)
         avg_pbr = stats.get("avg_pbr", self.max_pbr)
         
-        if m.per < avg_per * 0.8 and m.pbr < avg_pbr * 0.8:
+        # If the stock is significantly cheaper than the benchmark (sector or market)
+        if m.per < avg_per * 0.85 and m.pbr < avg_pbr * 0.85:
             score = (avg_per - m.per) + (avg_pbr - m.pbr) * 10
+            bench_type = "Sector" if stats.get("count", 0) < 500 else "Market" # Simplified check
             return Recommendation(
                 stock=stock,
                 category="Value",
-                reason=f"Deep Value relative to {stock.sector}",
+                reason=f"Deep Value relative to {bench_type}",
                 score=score,
                 sector_stats=stats
             )
         return None
 
-    def _assess_quality(self, stock: Stock, sector_stats: Dict) -> Optional[Recommendation]:
+    def _assess_quality(self, stock: Stock, stats: Dict) -> Optional[Recommendation]:
         m = stock.metrics
         if not m.roe or not m.debt_ratio: return None
         if m.roe < self.min_roe or m.debt_ratio > self.max_debt_ratio: return None
         
-        stats = sector_stats.get(stock.sector, {})
         avg_roe = stats.get("avg_roe", 0)
         
-        # High Quality: ROE must be better than sector average
+        # Quality: ROE must be better than the benchmark
         if m.roe > avg_roe:
             score = m.roe - (m.debt_ratio / 10)
             return Recommendation(
                 stock=stock,
                 category="Quality",
-                reason=f"High Quality relative to {stock.sector}",
+                reason=f"High Quality relative to Benchmark",
                 score=score,
                 sector_stats=stats
             )

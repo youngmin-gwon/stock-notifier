@@ -58,7 +58,10 @@ class DiscordNotifier(INotifier):
         roe_ctx = compare(m.roe, stats.get("avg_roe"), better_if_lower=False)
         debt_ctx = compare(m.debt_ratio, stats.get("avg_debt"))
 
-        res = f"- {market_icon} **{s.name}** ({s.ticker}) | {s.sector}\n"
+        # Sector name cleanup: ensure it doesn't just say '업종별'
+        sector_name = s.sector if s.sector and s.sector != "업종별" else "기타"
+
+        res = f"- {market_icon} **{s.name}** ({s.ticker}) | {sector_name}\n"
         if m.per: res += f"  • PER: {m.per:.1f}{per_ctx}\n"
         if m.pbr: res += f"  • PBR: {m.pbr:.1f}{pbr_ctx}\n"
         if m.roe: res += f"  • ROE: {m.roe:.1f}%{roe_ctx}\n"
@@ -67,24 +70,11 @@ class DiscordNotifier(INotifier):
 
     def _send_to_discord(self, content: str):
         try:
-            # Enhanced debugging logs
-            if self.webhook_url:
-                url_len = len(self.webhook_url)
-                masked = f"{self.webhook_url[:15]}...{self.webhook_url[-5:]}"
-                print(f"[DEBUG] Discord URL Check: Length={url_len}, Masked={masked}")
-            else:
-                print("[DEBUG] Discord URL is EMPTY")
-
             if len(content) > 2000:
                 content = content[:1990] + "..."
             
             payload = {"content": content}
             response = requests.post(self.webhook_url, json=payload)
-            
-            if not response.ok:
-                print(f"[DEBUG] Discord Error Response: {response.status_code}")
-                print(f"[DEBUG] Error Body: {response.text}")
-
             response.raise_for_status()
         except Exception as e:
             print(f"Error sending to Discord: {e}")

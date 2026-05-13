@@ -14,7 +14,6 @@ class NaverAdapter(IStockProvider):
         }
         
         try:
-            # 1. Get Top 100 KOSPI + Top 100 KOSDAQ
             all_tickers = []
             for sosok in [0, 1]:
                 url = f"https://finance.naver.com/sise/sise_market_sum.nhn?sosok={sosok}"
@@ -37,12 +36,13 @@ class NaverAdapter(IStockProvider):
                     if len(market_tickers) >= 100: break
                 all_tickers.extend(market_tickers)
             
-            print(f"Enriching {len(all_tickers)} KR stocks with extra metrics...")
+            print(f"Enriching {len(all_tickers)} KR stocks...")
             for ticker, name, price in all_tickers:
                 try:
                     time.sleep(0.1)
                     item_url = f"https://finance.naver.com/item/main.nhn?code={ticker}"
                     item_res = requests.get(item_url, headers=headers)
+                    # Use utf-8 for individual item page
                     item_soup = BeautifulSoup(item_res.content.decode('utf-8', errors='replace'), 'html.parser')
                     
                     invest_info = item_soup.find('div', {'class': 'aside_invest_info'})
@@ -50,35 +50,27 @@ class NaverAdapter(IStockProvider):
                     sector = None
                     
                     if invest_info:
-                        # PER, PBR, ROE (side panel)
                         per_em = invest_info.find('em', id='_per')
                         if per_em: per = self._to_float(per_em.text)
-                        
                         pbr_em = invest_info.find('em', id='_pbr')
                         if pbr_em: pbr = self._to_float(pbr_em.text)
                         
-                        # Sector (업종)
-                        sector_h4 = item_soup.find('h4', string=lambda x: x and '업종' in x)
-                        if not sector_h4:
-                            # Try searching for a-tag with 'sise_group' in link
-                            sector_a = item_soup.find('a', href=lambda x: x and 'sise_group.naver' in x)
-                            if sector_a: sector = sector_a.text.strip()
-                        else:
-                            sector_a = sector_h4.find_next('a')
-                            if sector_a: sector = sector_a.text.strip()
+                        # Sector (Fix: Precise extraction from trade_compare section)
+                        compare_div = item_soup.find('div', {'class': 'trade_compare'})
+                        if compare_div:
+                            sector_a = compare_div.find('a', href=lambda x: x and 'sise_group_detail.naver?type=upjong' in x)
+                            if sector_a:
+                                sector = sector_a.text.strip()
 
-                    # Scrape ROE and Debt Ratio from Financials table (simplified for now)
                     cop_analysis = item_soup.find('div', {'class': 'section_cop_analysis'})
                     if cop_analysis:
                         table = cop_analysis.find('table')
                         if table:
                             for tr in table.find_all('tr'):
                                 text = tr.text
-                                # ROE
                                 if 'ROE' in text:
                                     tds = tr.find_all('td')
-                                    if len(tds) >= 3: roe = self._to_float(tds[2].text) # Latest annual
-                                # 부채비율
+                                    if len(tds) >= 3: roe = self._to_float(tds[2].text)
                                 if '부채비율' in text:
                                     tds = tr.find_all('td')
                                     if len(tds) >= 3: debt = self._to_float(tds[2].text)
